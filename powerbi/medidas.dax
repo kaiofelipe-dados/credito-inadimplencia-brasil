@@ -1,0 +1,91 @@
+// =============================================================================
+// Medidas DAX · Painel de Crédito e Inadimplência
+// Projeto: Carteira de crédito e inadimplência no Sistema Financeiro Nacional
+//
+// Os valores do SCR.data são SALDOS de fim de mês. Saldos não se somam entre
+// meses: para qualquer período (ano, trimestre ou todos os meses), as medidas
+// de saldo usam o último mês do período (LASTDATE).
+// Inadimplência = carteira_inadimplencia / carteira_ativa (definição do BCB).
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+// Tabela calendário (Modelagem > Nova tabela)
+// Do primeiro dia do primeiro mês até o último data-base disponível.
+// Depois: Ferramentas de tabela > Marcar como tabela de datas > coluna Data.
+// -----------------------------------------------------------------------------
+dCalendario =
+VAR Inicio = EOMONTH ( MIN ( fCredito[data_base] ), -1 ) + 1
+VAR Fim = MAX ( fCredito[data_base] )
+RETURN
+    ADDCOLUMNS (
+        CALENDAR ( Inicio, Fim ),
+        "Ano", YEAR ( [Date] ),
+        "Mês", MONTH ( [Date] ),
+        "Mês Nome", FORMAT ( [Date], "mmm" ),
+        "Ano-Mês", FORMAT ( [Date], "yyyy-mm" ),
+        "Trimestre", "T" & QUARTER ( [Date] ) & "/" & YEAR ( [Date] )
+    )
+
+
+// -----------------------------------------------------------------------------
+// Medidas de saldo (R$)
+// -----------------------------------------------------------------------------
+Carteira Ativa =
+CALCULATE ( SUM ( fCredito[carteira_ativa] ), LASTDATE ( dCalendario[Date] ) )
+
+Carteira Inadimplente =
+CALCULATE ( SUM ( fCredito[carteira_inadimplencia] ), LASTDATE ( dCalendario[Date] ) )
+
+Ativo Problemático =
+CALCULATE ( SUM ( fCredito[ativo_problematico] ), LASTDATE ( dCalendario[Date] ) )
+
+
+// -----------------------------------------------------------------------------
+// Indicadores (formato: Porcentagem, 2 casas)
+// -----------------------------------------------------------------------------
+% Inadimplência =
+DIVIDE ( [Carteira Inadimplente], [Carteira Ativa] )
+
+% Ativo Problemático =
+DIVIDE ( [Ativo Problemático], [Carteira Ativa] )
+
+
+// -----------------------------------------------------------------------------
+// Comparação com o mesmo mês do ano anterior
+// -----------------------------------------------------------------------------
+Carteira Ativa 12m Atrás =
+CALCULATE ( [Carteira Ativa], DATEADD ( dCalendario[Date], -12, MONTH ) )
+
+% Inadimplência 12m Atrás =
+CALCULATE ( [% Inadimplência], DATEADD ( dCalendario[Date], -12, MONTH ) )
+
+// Formato: Porcentagem, 1 casa
+Crescimento Carteira 12m =
+DIVIDE ( [Carteira Ativa] - [Carteira Ativa 12m Atrás], [Carteira Ativa 12m Atrás] )
+
+// Em pontos percentuais. Formato personalizado: +0.00 "p.p.";-0.00 "p.p."
+Variação Inadimplência 12m (p.p.) =
+IF (
+    NOT ISBLANK ( [% Inadimplência 12m Atrás] ),
+    ( [% Inadimplência] - [% Inadimplência 12m Atrás] ) * 100
+)
+
+
+// -----------------------------------------------------------------------------
+// Referência nacional (ignora o filtro de UF e região)
+// -----------------------------------------------------------------------------
+% Inadimplência Brasil =
+CALCULATE ( [% Inadimplência], REMOVEFILTERS ( dUF ) )
+
+// Em pontos percentuais. Formato personalizado: +0.00 "p.p.";-0.00 "p.p."
+Gap vs Brasil (p.p.) =
+( [% Inadimplência] - [% Inadimplência Brasil] ) * 100
+
+
+// -----------------------------------------------------------------------------
+// Participação na carteira do recorte visível (formato: Porcentagem, 1 casa)
+// Ex.: em um gráfico por modalidade, quanto cada uma representa do total.
+// -----------------------------------------------------------------------------
+% da Carteira =
+DIVIDE ( [Carteira Ativa], CALCULATE ( [Carteira Ativa], ALLSELECTED () ) )
